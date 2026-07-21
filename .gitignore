@@ -1,0 +1,35 @@
+# Secrets / env
+.env
+.env.*
+!.env.example
+
+# Docker runtime data (created by containers, not source)
+volumes/db/data/
+volumes/storage/
+volumes/pooler/*.log
+volumes/api/*.log
+volumes/logs/
+
+# Supabase / storage artifacts
+volumes/functions/**/node_modules/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
+*~
+
+# Logs / temp
+*.log
+tmp/
+temp/
