@@ -134,6 +134,9 @@ export type KommoFieldKey =
   | "origem_lead"
   | "investimento"
   | "faturamento_texto"
+  | "cnpj_ativo"
+  | "canal_venda"
+  | "objetivo_avaliar"
   | "utm_source"
   | "utm_medium"
   | "utm_campaign"
@@ -143,6 +146,9 @@ const KOMMO_FIELD_KEYS: KommoFieldKey[] = [
   "origem_lead",
   "investimento",
   "faturamento_texto",
+  "cnpj_ativo",
+  "canal_venda",
+  "objetivo_avaliar",
   "utm_source",
   "utm_medium",
   "utm_campaign",
@@ -168,31 +174,48 @@ export async function getKommoFieldOverrides(): Promise<Partial<Record<KommoFiel
   }
 }
 
+const KOMMO_FIELDS_PAGE_SIZE = 50; // limite máximo por página na API v4
+
+function mapKommoField(f: any): KommoCustomField {
+  return {
+    id: Number(f.id),
+    name: String(f.name ?? ""),
+    code: f.code ?? null,
+    type: String(f.type ?? ""),
+    enums: Array.isArray(f.enums)
+      ? f.enums.map((e: any) => ({ id: Number(e.id), value: String(e.value ?? "") }))
+      : undefined,
+  };
+}
+
+// Busca UMA página de custom fields (para infinite scroll no admin).
+export async function fetchLeadCustomFieldsPage(
+  base: string,
+  token: string,
+  page: number,
+): Promise<{ items: KommoCustomField[]; hasMore: boolean }> {
+  const clean = base.replace(/\/$/, "");
+  const res = await fetch(
+    `${clean}/api/v4/leads/custom_fields?limit=${KOMMO_FIELDS_PAGE_SIZE}&page=${page}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  if (res.status === 204 || !res.ok) return { items: [], hasMore: false };
+  const data: any = await res.json();
+  const items: KommoCustomField[] = (data?._embedded?.custom_fields ?? []).map(mapKommoField);
+  return { items, hasMore: items.length === KOMMO_FIELDS_PAGE_SIZE };
+}
+
 export async function fetchAllLeadCustomFields(base: string, token: string): Promise<KommoCustomField[]> {
   if (fieldsCache && Date.now() - fieldsCache.at < FIELDS_TTL_MS) return fieldsCache.leads;
   const all: KommoCustomField[] = [];
+  // Kommo v4 capa `limit` em 50 por página. Pagina até a página vir incompleta
+  // ou a API responder 204 (sem mais conteúdo). Guard de 100 páginas = 5000.
   let page = 1;
-  while (page < 20) {
-    const res = await fetch(
-      `${base.replace(/\/$/, "")}/api/v4/leads/custom_fields?limit=250&page=${page}`,
-      { headers: { Authorization: `Bearer ${token}` } },
-    );
-    if (!res.ok) break;
-    const data: any = await res.json();
-    const items: any[] = data?._embedded?.custom_fields ?? [];
+  while (page <= 100) {
+    const { items, hasMore } = await fetchLeadCustomFieldsPage(base, token, page);
     if (!items.length) break;
-    for (const f of items) {
-      all.push({
-        id: Number(f.id),
-        name: String(f.name ?? ""),
-        code: f.code ?? null,
-        type: String(f.type ?? ""),
-        enums: Array.isArray(f.enums)
-          ? f.enums.map((e: any) => ({ id: Number(e.id), value: String(e.value ?? "") }))
-          : undefined,
-      });
-    }
-    if (items.length < 250) break;
+    all.push(...items);
+    if (!hasMore) break; // última página
     page++;
   }
   if (all.length) fieldsCache = { leads: all, at: Date.now() };
@@ -266,8 +289,18 @@ export async function pushLeadToKommoInternal(leadId: string) {
     contactCustomFields.push({ field_code: "EMAIL", values: [{ value: lead.email, enum_code: "WORK" }] });
 
   const extras = parseMessageExtras(lead.message);
+  const pickExtra = (...labels: string[]): string => {
+    for (const l of labels) {
+      const v = extras[norm(l)];
+      if (v) return v;
+    }
+    return "";
+  };
   const faturamento = extras[norm("Faturamento")] ?? "";
   const investimento = extras[norm("Investimento")] ?? "";
+  const cnpjAtivo = pickExtra("Possui CNPJ Ativo?", "CNPJ", "Possui CNPJ");
+  const canalVenda = pickExtra("Qual canal principal de venda", "Canal principal de venda", "Canal");
+  const objetivoAvaliar = pickExtra("O que você quer avaliar?", "Objetivo", "O que quer avaliar");
   const utm = (lead.utm ?? {}) as Record<string, string>;
 
   // Resolve fields: 1) override do admin, 2) auto via API (nome/code), 3) fallback hardcoded.
@@ -283,6 +316,9 @@ export async function pushLeadToKommoInternal(leadId: string) {
     ORIGEM_LEAD: resolveField("origem_lead", 188364, ["Origem do Lead", "Origem"]),
     INVESTIMENTO: resolveField("investimento", 848356, ["Qual valor para investimento?", "Investimento"]),
     FATURAMENTO_TEXTO: resolveField("faturamento_texto", 854005, ["Qual o faturamento da sua loja? (Texto)", "Qual o faturamento da sua loja?", "Faturamento"]),
+    CNPJ_ATIVO: resolveField("cnpj_ativo", 0, ["Possui CNPJ Ativo?", "CNPJ"]),
+    CANAL_VENDA: resolveField("canal_venda", 0, ["Qual canal principal de venda", "Canal principal de venda", "Canal"]),
+    OBJETIVO_AVALIAR: resolveField("objetivo_avaliar", 0, ["O que você quer avaliar?", "Objetivo"]),
     UTM_CONTENT: resolveField("utm_content", 185084, ["utm_content"], "UTM_CONTENT"),
     UTM_MEDIUM: resolveField("utm_medium", 185086, ["utm_medium"], "UTM_MEDIUM"),
     UTM_CAMPAIGN: resolveField("utm_campaign", 185088, ["utm_campaign"], "UTM_CAMPAIGN"),
@@ -292,7 +328,7 @@ export async function pushLeadToKommoInternal(leadId: string) {
   const leadCustomFields: any[] = [];
   const utmCustomFieldsById: any[] = [];
   const pushTextById = (field: { id: number }, value?: string) => {
-    if (!value) return;
+    if (!value || !field.id || field.id <= 0) return; // id 0 = campo sem mapeamento
     leadCustomFields.push({ field_id: field.id, values: [{ value }] });
   };
   const pushTextByCodeOrId = (field: { id: number; code?: string | null; source: string }, value?: string) => {
@@ -309,12 +345,16 @@ export async function pushLeadToKommoInternal(leadId: string) {
   // Aba Principal — Origem do Lead
   pushTextById(
     FIELD.ORIGEM_LEAD,
-    lead.source_section ? `LP Vettrus — ${lead.source_section}` : "LP Vettrus",
+    lead.source_section ? `Viabilidade Vettrus — ${lead.source_section}` : "Viabilidade Vettrus",
   );
   // Aba Agendamento — Qual valor para investimento?
   pushTextById(FIELD.INVESTIMENTO, investimento);
   // Aba Qualificação — Qual o faturamento da sua loja? (Texto)
   pushTextById(FIELD.FATURAMENTO_TEXTO, faturamento);
+  // Aba Qualificação — CNPJ / canal de venda / objetivo
+  pushTextById(FIELD.CNPJ_ATIVO, cnpjAtivo);
+  pushTextById(FIELD.CANAL_VENDA, canalVenda);
+  pushTextById(FIELD.OBJETIVO_AVALIAR, objetivoAvaliar);
   // Aba Estatísticas — UTMs
   pushTextByCodeOrId(FIELD.UTM_SOURCE, utm.utm_source);
   pushTextByCodeOrId(FIELD.UTM_MEDIUM, utm.utm_medium);
@@ -334,20 +374,20 @@ export async function pushLeadToKommoInternal(leadId: string) {
 
   const payload = [
     {
-      name: `LP — ${lead.name ?? lead.email ?? lead.phone ?? "Sem nome"}`,
+      name: `Viabilidade — ${lead.name ?? lead.email ?? lead.phone ?? "Sem nome"}`,
       ...(pipelineId && { pipeline_id: pipelineId }),
       ...(statusId && { status_id: statusId }),
       ...(leadCustomFields.length && { custom_fields_values: leadCustomFields }),
       _embedded: {
         contacts: [
           {
-            name: lead.name ?? "Lead LP",
+            name: lead.name ?? "Lead Viabilidade",
             ...(lead.company && { company_name: lead.company }),
             custom_fields_values: contactCustomFields,
           },
         ],
         tags: [
-          { name: "LP Vettrus" },
+          { name: "Viabilidade" },
           ...(lead.source_section ? [{ name: lead.source_section }] : []),
         ],
       },
@@ -419,7 +459,7 @@ export async function pushLeadToKommoInternal(leadId: string) {
 
     // Nota com todos os dados do formulário (visibilidade no lead).
     if (kommoId) {
-      const lines: string[] = ["📝 Lead recebido pela Landing Page Vettrus", ""];
+      const lines: string[] = ["📝 Lead recebido pela Viabilidade", ""];
       if (lead.name) lines.push(`• Nome: ${lead.name}`);
       if (lead.email) lines.push(`• E-mail: ${lead.email}`);
       if (lead.phone) lines.push(`• Telefone: ${lead.phone}`);
