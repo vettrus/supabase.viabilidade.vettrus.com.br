@@ -345,7 +345,7 @@ export async function pushLeadToKommoInternal(leadId: string) {
   // Aba Principal — Origem do Lead
   pushTextById(
     FIELD.ORIGEM_LEAD,
-    lead.source_section ? `Viabilidade Vettrus — ${lead.source_section}` : "Viabilidade Vettrus",
+    "Viabilidade Vettrus",
   );
   // Aba Agendamento — Qual valor para investimento?
   pushTextById(FIELD.INVESTIMENTO, investimento);
@@ -386,10 +386,7 @@ export async function pushLeadToKommoInternal(leadId: string) {
             custom_fields_values: contactCustomFields,
           },
         ],
-        tags: [
-          { name: "Viabilidade" },
-          ...(lead.source_section ? [{ name: lead.source_section }] : []),
-        ],
+        tags: [{ name: "Viabilidade" }],
       },
     },
   ];
@@ -464,7 +461,6 @@ export async function pushLeadToKommoInternal(leadId: string) {
       if (lead.email) lines.push(`• E-mail: ${lead.email}`);
       if (lead.phone) lines.push(`• Telefone: ${lead.phone}`);
       if (lead.company) lines.push(`• Empresa: ${lead.company}`);
-      if (lead.source_section) lines.push(`• Seção de origem: ${lead.source_section}`);
       if (lead.message) {
         lines.push("", "💬 Mensagem:", lead.message);
       }
