@@ -75,11 +75,11 @@ services:
     labels:
       - traefik.enable=true
       - traefik.docker.network=dokploy-network
-      - traefik.http.routers.supabase-lp.rule=Host(`supabase.lp.vettrus.com.br`)
-      - traefik.http.routers.supabase-lp.entrypoints=websecure
-      - traefik.http.routers.supabase-lp.tls=true
-      - traefik.http.routers.supabase-lp.tls.certresolver=letsencrypt
-      - traefik.http.services.supabase-lp.loadbalancer.server.port=8000
+      - traefik.http.routers.supabase-viabilidade.rule=Host(`supabase.viabilidade.vettrus.com.br`)
+      - traefik.http.routers.supabase-viabilidade.entrypoints=websecure
+      - traefik.http.routers.supabase-viabilidade.tls=true
+      - traefik.http.routers.supabase-viabilidade.tls.certresolver=letsencrypt
+      - traefik.http.services.supabase-viabilidade.loadbalancer.server.port=8000
     healthcheck:
       test: ["CMD", "kong", "health"]
       interval: 5s
@@ -628,12 +628,12 @@ services:
     labels:
       - traefik.enable=true
       - traefik.docker.network=dokploy-network
-      - traefik.http.routers.mcp-lp.rule=Host(`supabase.lp.vettrus.com.br`) && PathPrefix(`/mcp`)
-      - traefik.http.routers.mcp-lp.entrypoints=websecure
-      - traefik.http.routers.mcp-lp.tls=true
-      - traefik.http.routers.mcp-lp.tls.certresolver=letsencrypt
-      - traefik.http.services.mcp-lp.loadbalancer.server.port=8000
-      - traefik.http.routers.mcp-lp.middlewares=mcp-auth
+      - traefik.http.routers.mcp-viabilidade.rule=Host(`supabase.viabilidade.vettrus.com.br`) && PathPrefix(`/mcp`)
+      - traefik.http.routers.mcp-viabilidade.entrypoints=websecure
+      - traefik.http.routers.mcp-viabilidade.tls=true
+      - traefik.http.routers.mcp-viabilidade.tls.certresolver=letsencrypt
+      - traefik.http.services.mcp-viabilidade.loadbalancer.server.port=8000
+      - traefik.http.routers.mcp-viabilidade.middlewares=mcp-auth
       # Generate hash: htpasswd -nb mcp 'STRONGPASS'  (escape every $ as $$ here)
       - traefik.http.middlewares.mcp-auth.basicauth.users=${MCP_BASICAUTH_USERS}
 
